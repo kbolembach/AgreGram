@@ -31,4 +31,5 @@ want your feed posted to,
 - alternatively, you can specify names of the subscribed channels in 
 `manual_subscribed_dialogs`.
 
-Run the script, preferably on a trusted server.
+Run the script, preferably on a trusted server. AgreGram was written in
+Python 3.12.1.
