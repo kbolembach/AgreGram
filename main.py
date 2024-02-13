@@ -1,11 +1,11 @@
-from pyrogram import filters, idle, Client, enums
-from pyrogram.raw import functions
 import json
 
-DEBUG = True
+from pyrogram import filters, idle, Client, enums
+from pyrogram.raw import functions
+
+DEBUG = False
 app = Client("my_account")
-unique_ids_messages = {}
-recent_message_id = 0
+unique_ids = []
 
 
 def format_message(message):
@@ -24,18 +24,36 @@ def format_message(message):
     else:
         caption += "From {title}".format(title=message.sender_chat.title)
 
-    # TODO: not every channel has a username - do as above
-    if message.forward_from_chat is not None:
+    if message.forward_from_chat is None:
+        if DEBUG:
+            print(caption)
+        return caption
+
+    if message.forward_from_chat.link is not None:
         caption += "\nForwarded from [{title}](t.me/{link})".format(title=message.forward_from_chat.title,
                                                                     link=message.forward_from_chat.username)
+    else:
+        caption += "\nForwarded from title".format(title=message.forward_from_chat.title)
+
     if DEBUG:
         print(caption)
     return caption
 
 
+def get_unique_id(message):
+    unique_id = None
+    if message.photo is not None:
+        unique_id = message.photo.file_unique_id
+    if message.video is not None:
+        unique_id = message.video.file_unique_id
+    if message.animation is not None:
+        unique_id = message.animation.file_unique_id
+    return unique_id
+
+
 async def main():
     async with app:
-        global unique_ids_messages, recent_message_id
+        global unique_ids
         json_file = open("data.json").read()
         json_contents = json.loads(json_file)
         target_channel = json_contents["target_channel"]
@@ -43,25 +61,21 @@ async def main():
         media_group_ids = []
         unique_ids_file = open("unique_ids.txt").read()
 
-        @app.on_message(filters.outgoing, group=1)
-        async def update_recent_id(client, message):
-            global recent_message_id
-            print("\noutgoing")
-            # print(message)
-            if message.chat.username != target_channel:
-                return
-            recent_message_id = message.id
-            print(("Yippie!", recent_message_id, message.id))
-            print('\n')
-
-        # await app.send_message(target_channel, "Bot started.")
-
         if DEBUG:
             print(unique_ids_file)
         if unique_ids_file != "":
-            unique_ids_messages = dict([s.split(' ') for s in unique_ids_file.split('\n')])
+            unique_ids = unique_ids_file.split('\n')
         if DEBUG:
-            print(unique_ids_messages)
+            print(unique_ids)
+
+        @app.on_message(filters.me, group=1)
+        async def update_recent_id(client, message):
+            global unique_ids
+            if message.chat.username != target_channel:
+                return
+            unique_id = get_unique_id(message)
+            if unique_id is not None:
+                unique_ids = [unique_id] + unique_ids
 
         if not subscribed_dialogs:
             dialogs = await app.invoke(
@@ -74,14 +88,25 @@ async def main():
         elif DEBUG:
             print("Target folder: {folder}".format(folder=json_contents["target_folder"]))
 
+        async for dialog in app.get_dialogs():
+            if dialog.chat.username == target_channel:
+                target_channel_title = dialog.chat.title
+                target_channel_id = dialog.chat.id
+
         if DEBUG:
             print(json_contents)
-            print("Target channel: {target}".format(target=target_channel))
+            print("Target channel: {target}, {title}, {id}".format(target=target_channel, title=target_channel_title,
+                                                                   id=target_channel_id))
             print("Number of subscribed dialogs: {count}".format(count=len(subscribed_dialogs)))
 
         @app.on_message(filters.chat(subscribed_dialogs))
         async def fetch_feed(client, message):
-            global unique_ids_messages, recent_message_id
+            global unique_ids
+
+            message.chat.id = target_channel_id
+            message.chat.title = target_channel_title
+            message.chat.username = target_channel
+
             if message.media_group_id is not None:
                 if message.media_group_id not in media_group_ids:
                     if DEBUG:
@@ -91,31 +116,17 @@ async def main():
                     caption = format_message(message)
                     await app.copy_media_group(target_channel, message.sender_chat.id, message.id, caption)
             else:
-                unique_id = None
-                if message.photo is not None:
-                    unique_id = message.photo.file_unique_id
-                if message.video is not None:
-                    unique_id = message.video.file_unique_id
-                if message.animation is not None:
-                    unique_id = message.animation.file_unique_id
-                if unique_id in unique_ids_messages:
-                    print(message)
-                    print("Media already in message with id {id}".format(id=unique_ids_messages[unique_id]))
+                unique_id = get_unique_id(message)
+                if unique_id in unique_ids:
+                    if DEBUG:
+                        print(message)
+                        print("Media already exists.")
+                    return
 
-                    return # TODO: edit existing message
-                if unique_id is not None:
-                    unique_ids_messages[unique_id] = recent_message_id + 1
-
-                    # if len(unique_ids) > 2 * 20000:
-                    #     unique_ids = unique_ids[0:(20000 - 1)]
-                    #     message_ids = message_ids[0:(20000 - 1)]
+                if len(unique_ids) > 2 * 20000:
+                    unique_ids = unique_ids[0:(20000 - 1)]
 
                 caption = format_message(message)
-
-                # TODO: get these manually or via json
-                message.chat.id = -1002088236455
-                message.chat.title = "Jeko's Aggregate"
-                message.chat.username = "jekoagregram"
 
                 if DEBUG:
                     print(message)
@@ -124,20 +135,19 @@ async def main():
                     print("\n")
 
                 if message.media == enums.MessageMediaType.STICKER:
-                    print("sticker!")
                     await app.forward_messages(target_channel, message.sender_chat.id, message.id)
                 elif message.media is not None and message.media != enums.MessageMediaType.WEB_PAGE:
-                    print("media!")
                     await app.copy_message(target_channel, message.sender_chat.id, message.id, caption)
                 else:
-                    print("no media or web page!")
                     await app.send_message(target_channel, caption)
+
+        await app.send_message(target_channel, "Bot started.")
 
         await idle()
         await app.stop()
 
         f_ids = open("unique_ids.txt", "w")
-        contents = [str(uid) + " " + str(mid) for uid, mid in zip(unique_ids_messages.keys(), unique_ids_messages.values())]
+        contents = [str(uid) for uid in unique_ids]
         f_ids.write('\n'.join(contents))
         f_ids.close()
 
