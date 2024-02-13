@@ -1,5 +1,5 @@
 # AgreGram (WIP)
-___
+
 ## Overview
 AgreGram is a Telegram userbot used to aggregate posts and media from channels 
 you subscribe to and post them in your dedicated feed channel, without
@@ -14,7 +14,7 @@ personal account.
 You can specify the channel where you want your feed to be posted, and your
 subscribed channels can be taken from a specific folder or specified manually
 in the `data.json`.
-___
+
 ## Setup
 To use AgreGram, you need to 
 [install the Pyrogram library](https://docs.pyrogram.org/intro/install) and 
