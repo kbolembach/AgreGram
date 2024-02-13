@@ -1,4 +1,4 @@
-# AgreGram (WIP)
+# AgreGram
 
 ## Overview
 AgreGram is a Telegram userbot used to aggregate posts and media from channels 
